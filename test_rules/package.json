@@ -1,0 +1,5 @@
+{
+  "name": "findmoser-rules-tests", "private": true, "type": "module",
+  "scripts": {"test": "firebase emulators:exec --config ../firebase.json --project demo-findmoser --only firestore 'node --test attendance.test.mjs'"},
+  "devDependencies": {"@firebase/rules-unit-testing": "4.0.1", "firebase": "11.10.0", "firebase-tools": "14.12.1"}
+}

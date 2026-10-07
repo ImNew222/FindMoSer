@@ -1,0 +1,10 @@
+{
+  "indexes": [
+    {"collectionGroup":"attendance_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"enrolledStudentIds","arrayConfig":"CONTAINS"},{"fieldPath":"date","order":"ASCENDING"}]},
+    {"collectionGroup":"attendance_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"facultyId","order":"ASCENDING"},{"fieldPath":"date","order":"ASCENDING"}]},
+    {"collectionGroup":"attendance","queryScope":"COLLECTION","fields":[{"fieldPath":"studentId","order":"ASCENDING"},{"fieldPath":"date","order":"ASCENDING"}]},
+    {"collectionGroup":"attendance","queryScope":"COLLECTION","fields":[{"fieldPath":"facultyId","order":"ASCENDING"},{"fieldPath":"date","order":"ASCENDING"}]},
+    {"collectionGroup":"attendance","queryScope":"COLLECTION","fields":[{"fieldPath":"facultyId","order":"ASCENDING"},{"fieldPath":"sessionId","order":"ASCENDING"}]}
+  ],
+  "fieldOverrides": []
+}

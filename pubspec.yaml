@@ -1,0 +1,57 @@
+name: findmoser_app
+description: "FindMoSer: Proximity-Based Student Attendance for Cebu Eastern College"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # Firebase
+  firebase_core: ^3.13.0
+  firebase_auth: ^5.7.0
+  cloud_firestore: ^5.6.12
+
+  # State Management
+  flutter_riverpod: ^2.6.1
+
+  # UI & Design
+  google_fonts: ^6.2.1
+  flutter_animate: ^4.5.2
+  lottie: ^3.3.1
+
+  # BLE
+  flutter_blue_plus: ^1.35.0
+
+  # Permissions
+  permission_handler: ^11.3.0
+
+  # Export / Sharing
+  share_plus: ^10.1.4
+  path_provider: ^2.1.5
+
+  intl: ^0.20.3
+  flutter_markdown: ^0.7.7+1
+  shared_preferences: ^2.5.5
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  fake_cloud_firestore: ^3.1.0
+
+dependency_overrides:
+  path_provider_android: 2.2.14
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/fonts/
+    - assets/audio/
+    - assets/animations/
