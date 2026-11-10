@@ -85,3 +85,6 @@ PREVIEW_OUTPUT=/tmp/findmoser-ui-preview flutter test test/attendance_ui_test.da
 Read [the attendance pilot guide](docs/attendance-pilot.md) for deployment (rules include `attendance_marks` and device-change adjudication), admin console setup, exact beacon names, test cases and thesis evidence. Read [device registration and replacement](docs/device-binding.md) for lost-phone rebinding via the admin Device Requests queue. To clear data between classroom runs run `npm run reset` from the parent folder (`node reset-data.js --devices` also frees phones for re-registration — never leave `serviceAccountKey.json` committed). Existing faculty accounts require `facultyApproved: true`; existing student hash IDs require review with the new APK. This intentionally fails closed until accounts and deployed rules match the new schema.
 
 [Earlier locator notes](docs/legacy-locator-notes.md) are retained as historical context, not a description of the current attendance app. The existing Chapter 1/2 documents must be reframed and physical results collected before presenting attendance claims in Chapter 3.
+## License
+
+Source-available, **all rights reserved**. This project is original academic work by Mike Alinghawa. Viewing and referencing are permitted; copying, redistribution, modification, or submission as one's own work is not. See [LICENSE](LICENSE).
