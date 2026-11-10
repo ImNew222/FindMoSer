@@ -55,3 +55,7 @@ GoogleService-Info.plist
 firebase_options.dart
 *.env
 
+
+# Service account credentials - never commit
+serviceAccountKey*.json
+service-account*.json
