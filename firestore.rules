@@ -5,6 +5,7 @@ service cloud.firestore {
     function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
     function faculty() { return signedIn() && me().role == 'faculty' && me().facultyApproved == true; }
     function student() { return signedIn() && me().role == 'student'; }
+    function admin()   { return signedIn() && me().role == 'admin'; }
     function text(value, max) { return value is string && value.size() > 0 && value.size() <= max; }
     function validDevice(value) { return value is string && value.matches('^[0-9a-f]{16}$') && value != '0000000000000000'; }
     function campusDate() {
@@ -13,42 +14,144 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow get: if signedIn() && (request.auth.uid == uid || faculty());
-      allow list: if faculty();
+      allow get: if signedIn() && (request.auth.uid == uid || faculty() || admin());
+      allow list: if faculty() || admin();
       allow create: if signedIn() && request.auth.uid == uid
         && request.resource.data.keys().hasAll(['displayName','email','role','department','facultyApproved','createdAt'])
-        && request.resource.data.keys().hasOnly(['displayName','email','role','department','facultyApproved','createdAt','deviceId'])
+        && request.resource.data.keys().hasOnly(['displayName','email','role','department','facultyApproved','createdAt','deviceId','schoolId'])
         && text(request.resource.data.displayName, 100) && text(request.resource.data.department, 100)
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.facultyApproved == false && request.resource.data.createdAt == request.time
         && ((request.resource.data.role == 'faculty' && !('deviceId' in request.resource.data))
           || (request.resource.data.role == 'student' && validDevice(request.resource.data.deviceId)
             && getAfter(/databases/$(database)/documents/device_bindings/$(request.resource.data.deviceId)).data.uid == uid));
-      allow update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','department','profilePhotoUrl'])
-        // Legacy optional fields must not block an unrelated name correction.
-        // Validate every field that changes; role/device/approval stay immutable.
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['displayName'])
-          || text(request.resource.data.displayName, 100))
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['department'])
-          || text(request.resource.data.department, 100))
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['profilePhotoUrl'])
-          || !('profilePhotoUrl' in request.resource.data) || request.resource.data.profilePhotoUrl is string);
+      allow update: if (
+        // Faculty manage their own consultation status and sharing hours.
+        (signedIn() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'displayName','department','profilePhotoUrl',
+            'availability','workStartTime','workEndTime'
+          ])
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['displayName'])
+            || text(request.resource.data.displayName, 100))
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['department'])
+            || text(request.resource.data.department, 100))
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['profilePhotoUrl'])
+            || !('profilePhotoUrl' in request.resource.data) || request.resource.data.profilePhotoUrl is string)
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['availability','workStartTime','workEndTime'])
+            || me().role == 'faculty')
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['availability'])
+            || request.resource.data.availability in ['unset','available','teaching','busy'])
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['workStartTime'])
+            || request.resource.data.workStartTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$'))
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['workEndTime'])
+            || request.resource.data.workEndTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')))
+        // Admin can toggle facultyApproved on any user.
+        || (admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['facultyApproved'])
+          && request.resource.data.facultyApproved is bool)
+        // Admin can softly pause a student's attendance access without
+        // touching their history.
+        || (admin()
+          && resource.data.role == 'student'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deactivated'])
+          && request.resource.data.deactivated is bool)
+        // Admin can clear a student's bound phone (lost or broken device).
+        // The student then files a fresh device-change request from any phone.
+        || (admin()
+          && resource.data.role == 'student'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deviceId'])
+          && !('deviceId' in request.resource.data))
+        // An approved device-change request rebinds the student to one phone.
+        || (admin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deviceId'])
+          && validDevice(request.resource.data.deviceId)
+          && getAfter(/databases/$(database)/documents/device_change_requests/$(uid)).data.newDeviceId == request.resource.data.deviceId
+          && getAfter(/databases/$(database)/documents/device_change_requests/$(uid)).data.status == 'approved'));
 
       match /class_schedule/{classId} {
         function validSchedule() {
           let d = request.resource.data;
           return d.keys().hasAll(['dayOfWeek','startTime','endTime','roomName','subject'])
-            && d.keys().hasOnly(['dayOfWeek','startTime','endTime','roomName','subject','studentIds'])
+            && d.keys().hasOnly(['dayOfWeek','startTime','endTime','roomName','subject','studentIds','joinCode'])
             && d.dayOfWeek in ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
             && d.startTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$') && d.endTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
             && d.endTime > d.startTime && text(d.subject, 150) && text(d.roomName, 60)
-            && (!('studentIds' in d) || (d.studentIds is list && d.studentIds.size() <= 200));
+            && (!('studentIds' in d) || (d.studentIds is list && d.studentIds.size() <= 200))
+            && (!('joinCode' in d) || d.joinCode.matches('^[A-Z0-9]{6}$'));
         }
-        allow read: if faculty() && request.auth.uid == uid;
+        allow read: if (faculty() && request.auth.uid == uid) || admin();
         allow create, update: if faculty() && request.auth.uid == uid && validSchedule();
         allow delete: if faculty() && request.auth.uid == uid;
+
+        // Roster subcollection: per-student entries for class rosters.
+        // Faculty own and manage the roster; students read their own entry.
+        match /roster/{schoolId} {
+          function validRosterEntry() {
+            let d = request.resource.data;
+            return d.keys().hasAll(['schoolId','studentName','status','addedAt'])
+              && d.keys().hasOnly(['schoolId','studentName','uid','status','addedAt'])
+              && text(d.schoolId, 50) && text(d.studentName, 100)
+              && d.status in ['pending','linked'];
+          }
+          allow read: if (faculty() && request.auth.uid == uid) || admin()
+            || (student() && resource.data.uid == request.auth.uid);
+          allow create, update: if faculty() && request.auth.uid == uid && validRosterEntry();
+          allow delete: if faculty() && request.auth.uid == uid;
+        }
       }
+    }
+
+    // A class code is the only student-readable link to a faculty class.
+    // The schedule, enrollment and faculty profile stay private.
+    match /class_codes/{code} {
+      function details() { return request.resource.data; }
+      allow get: if signedIn() && code.matches('^[A-Z0-9]{6}$');
+      allow list: if false;
+      allow create, update: if faculty()
+        && (!exists(/databases/$(database)/documents/class_codes/$(code))
+          || resource.data.facultyId == request.auth.uid)
+        && details().keys().hasAll(['facultyId','classId','subject','roomName','dayOfWeek','startTime','endTime'])
+        && details().keys().hasOnly(['facultyId','classId','subject','roomName','dayOfWeek','startTime','endTime','createdAt'])
+        && details().facultyId == request.auth.uid
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid)/class_schedule/$(details().classId))
+        && code.matches('^[A-Z0-9]{6}$');
+      allow delete: if faculty() && resource.data.facultyId == request.auth.uid;
+
+      // A student can only create their own membership. The faculty owner can
+      // read the list to merge it into enrollment before opening a session.
+      match /members/{studentId} {
+        allow get: if signedIn() && (request.auth.uid == studentId || faculty());
+        allow list: if faculty()
+          && get(/databases/$(database)/documents/class_codes/$(code)).data.facultyId == request.auth.uid;
+        allow create: if student() && request.auth.uid == studentId
+          && request.resource.data.keys().hasOnly(['studentId','joinedAt'])
+          && request.resource.data.studentId == studentId
+          && request.resource.data.joinedAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+
+    // Student-readable faculty directory projection. Private profile fields are
+    // never copied here, and only the faculty owner can publish their entry.
+    match /faculty_presence/{facultyId} {
+      function validPresence() {
+        let d = request.resource.data;
+        return d.keys().hasAll(['displayName','department','availability','updatedAt','isSharing'])
+          && d.keys().hasOnly(['displayName','department','availability','zoneName','currentRoom','beaconId','updatedAt','isSharing','workStartTime','workEndTime'])
+          && text(d.displayName, 100) && d.displayName == me().displayName
+          && d.department == me().department
+          && d.availability in ['unset','available','teaching','busy']
+          && d.isSharing is bool
+          && (!('zoneName' in d) || d.zoneName is string)
+          && (!('currentRoom' in d) || d.currentRoom is string)
+          && (!('beaconId' in d) || d.beaconId is string)
+          && (!('workStartTime' in d) || d.workStartTime is string)
+          && (!('workEndTime' in d) || d.workEndTime is string);
+      }
+      allow read: if signedIn();
+      allow create, update: if faculty() && request.auth.uid == facultyId && validPresence();
+      // A revoked faculty member must still be able to withdraw their entry.
+      allow delete: if signedIn() && request.auth.uid == facultyId;
     }
 
     // A direct lookup can report a free device; collection enumeration is denied.
@@ -58,32 +161,100 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['uid','createdAt'])
         && request.resource.data.uid == request.auth.uid && request.resource.data.createdAt == request.time
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student'
-        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.deviceId == deviceId;
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.deviceId == deviceId
+        // An approved device-change request is committed atomically in one
+        // batch: the admin rewrites users/{uid}.deviceId and creates the new
+        // binding in the same commit that closes the request as approved.
+        || (admin()
+          && request.resource.data.keys().hasOnly(['uid','createdAt'])
+          && request.resource.data.createdAt is timestamp
+          && validDevice(deviceId)
+          && request.resource.data.uid != request.auth.uid
+          && getAfter(/databases/$(database)/documents/users/$(request.resource.data.uid)).data.deviceId == deviceId
+          && getAfter(/databases/$(database)/documents/device_change_requests/$(request.resource.data.uid)).data.newDeviceId == deviceId
+          && getAfter(/databases/$(database)/documents/device_change_requests/$(request.resource.data.uid)).data.status == 'approved');
+      // Force-unbind removes the ownership row in the same commit that clears
+      // the student's profile pointer, freeing the phone for later binding.
+      allow delete: if admin()
+        && resource.data.uid is string
+        && !('deviceId' in getAfter(/databases/$(database)/documents/users/$(resource.data.uid)).data);
     }
     match /device_change_requests/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
+      allow read: if (signedIn() && request.auth.uid == uid) || admin();
       allow create, update: if student() && request.auth.uid == uid
+        && me().get('deactivated', false) != true
         && (!exists(/databases/$(database)/documents/device_change_requests/$(uid)) || resource.data.status != 'pending')
         && request.resource.data.keys().hasOnly(['studentId','newDeviceId','reason','status','requestedAt'])
         && request.resource.data.studentId == uid && validDevice(request.resource.data.newDeviceId)
         && request.resource.data.reason is string && request.resource.data.reason.size() >= 10 && request.resource.data.reason.size() <= 500
         && request.resource.data.status == 'pending' && request.resource.data.requestedAt == request.time;
+      // Only the deciding admin can move a pending request to approved or
+      // rejected. The audit trail (who, when, and the phone that was replaced)
+      // is written on the request itself, never overwritten afterwards.
+      allow update: if admin() && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','decidedAt','decidedBy','previousDeviceId'])
+        && request.resource.data.status in ['approved','rejected']
+        && request.resource.data.decidedAt == request.time
+        && request.resource.data.decidedBy == request.auth.uid
+        && (!('previousDeviceId' in request.resource.data)
+          || (request.resource.data.previousDeviceId is string
+            && request.resource.data.previousDeviceId.size() <= 64));
+    }
+
+    // Faculty-issued status marks for enrolled students who never submitted a
+    // scan receipt. Immutable, audited by reason, closed sessions only, and
+    // they can never overwrite real BLE evidence.
+    match /attendance_marks/{recordId} {
+      function canReadMark(d) {
+        return signedIn() && (d.studentId == request.auth.uid
+          || (faculty() && d.facultyId == request.auth.uid)
+          || admin());
+      }
+      function validMark() {
+        let d = request.resource.data;
+        let session = get(/databases/$(database)/documents/attendance_sessions/$(d.sessionId)).data;
+        return recordId == d.sessionId + '_' + d.studentId
+          && d.keys().hasAll(['facultyId','studentId','sessionId','subject','attendanceStatus','reason','markedAt'])
+          && d.keys().hasOnly(['facultyId','studentId','sessionId','subject','attendanceStatus','reason','markedAt','studentName'])
+          && d.studentName is string && d.studentName.size() > 0 && d.studentName.size() <= 100
+          && d.facultyId == request.auth.uid && d.facultyId == session.facultyId
+          && d.subject == session.subject
+          && session.status == 'closed'
+          && d.studentId in session.enrolledStudentIds
+          && d.attendanceStatus in ['absent','late','excused']
+          && d.attendanceStatus != 'present'
+          && d.reason is string && d.reason.size() >= 10 && d.reason.size() <= 500
+          && d.markedAt == request.time
+          && !exists(/databases/$(database)/documents/attendance/$(recordId));
+      }
+      allow get, list: if canReadMark(resource.data);
+      allow create: if faculty() && validMark();
     }
 
     match /attendance_sessions/{sessionId} {
       function validSession() {
         let d = request.resource.data;
         let schedule = get(/databases/$(database)/documents/users/$(request.auth.uid)/class_schedule/$(d.classId)).data;
-        return d.keys().hasOnly(['facultyId','classId','subject','roomId','date','openedAt','closesAt','status','enrolledStudentIds'])
+        return d.keys().hasOnly(['facultyId','classId','subject','roomId','date','openedAt','closesAt','status','enrolledStudentIds','joinCode'])
           && d.facultyId == request.auth.uid && d.classId != 'quick_scan'
           && d.subject == schedule.subject && d.roomId == schedule.roomName
           && d.enrolledStudentIds == schedule.studentIds && d.enrolledStudentIds is list
           && d.enrolledStudentIds.size() > 0 && d.enrolledStudentIds.size() <= 200
+          && (!('joinCode' in d) || (d.joinCode is string && d.joinCode.matches('^[A-Z0-9]{6}$')))
           && d.status == 'open' && d.openedAt == request.time && d.date == campusDate()
           && d.closesAt is timestamp && d.closesAt > request.time && d.closesAt <= request.time + duration.value(4, 'h');
       }
+      // A student who joined through the session's class code late still
+      // deserves sight of the open window; the membership document is the
+      // proof. Everyone else keeps seeing sessions only when enrolled.
+      function memberOfSession() {
+        return resource.data.get('joinCode', '') != ''
+          && exists(/databases/$(database)/documents/class_codes/$(resource.data.get('joinCode',''))/members/$(request.auth.uid));
+      }
       allow read: if signedIn() && ((faculty() && resource.data.facultyId == request.auth.uid)
-        || request.auth.uid in resource.data.enrolledStudentIds);
+        || request.auth.uid in resource.data.enrolledStudentIds
+        || memberOfSession()
+        || admin());
       allow create: if faculty() && validSession();
       allow update: if faculty() && resource.data.facultyId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','closedAt'])
@@ -91,7 +262,7 @@ service cloud.firestore {
     }
 
     match /attendance/{recordId} {
-      function canRead(d) { return signedIn() && (d.studentId == request.auth.uid || (faculty() && d.facultyId == request.auth.uid)); }
+      function canRead(d) { return signedIn() && (d.studentId == request.auth.uid || (faculty() && d.facultyId == request.auth.uid) || admin()); }
       function validScan() {
         let d = request.resource.data;
         let session = get(/databases/$(database)/documents/attendance_sessions/$(d.sessionId)).data;
@@ -100,12 +271,17 @@ service cloud.firestore {
           && d.studentId == request.auth.uid && recordId == d.sessionId + '_' + request.auth.uid
           && d.studentName == me().displayName && d.deviceId == me().deviceId
           && get(/databases/$(database)/documents/device_bindings/$(d.deviceId)).data.uid == request.auth.uid
-          && session.status == 'open' && request.time < session.closesAt && request.time >= session.openedAt
+          // Offline scans sync later: the evidence timestamp must fall inside
+          // the session window, and the upload may arrive up to 24h after the
+          // session closes. Current session status is irrelevant to that.
+          && request.time >= session.openedAt
+          && request.time < session.closesAt + duration.value(24, 'h')
           && request.auth.uid in session.enrolledStudentIds
           && d.facultyId == session.facultyId && d.classId == session.classId && d.subject == session.subject
           && d.roomId == session.roomId && d.zoneName == session.roomId && d.beaconId == 'FindMoSer_' + session.roomId
           && d.date == session.date && d.classId != 'quick_scan'
           && d.serverTimestamp == request.time && d.localTimestamp is timestamp
+          && d.localTimestamp >= session.openedAt && d.localTimestamp < session.closesAt
           && d.rssi is int && d.rssi >= -70 && d.rssi <= 0
           && d.dwellSeconds is int && d.dwellSeconds >= 15 && d.dwellSeconds <= 120
           && d.attendanceStatus == 'present';
@@ -122,7 +298,10 @@ service cloud.firestore {
       }
       allow get: if signedIn() && (!exists(/databases/$(database)/documents/attendance/$(recordId)) || canRead(resource.data));
       allow list: if canRead(resource.data);
-      allow create: if student() && validScan();
+      // A deactivated student keeps their history but can no longer submit
+      // new evidence or file device-change requests while paused. The flag
+      // is optional, so absent must read as active.
+      allow create: if student() && me().get('deactivated', false) != true && validScan();
       allow update: if faculty() && resource.data.facultyId == request.auth.uid && validCorrection();
       match /corrections/{auditId} {
         function parent() { return get(/databases/$(database)/documents/attendance/$(recordId)).data; }
@@ -137,6 +316,15 @@ service cloud.firestore {
           && getAfter(/databases/$(database)/documents/attendance/$(recordId)).data.lastCorrectionId == auditId
           && getAfter(/databases/$(database)/documents/attendance/$(recordId)).data.attendanceStatus == request.resource.data.toStatus;
       }
+    }
+    // Faculty presence source data. Students read the sanitized projection in
+    // faculty_presence instead, so a paused share cannot leak a stale room.
+    match /locations/{facultyId} {
+      allow get, list, write: if faculty() && request.auth.uid == facultyId;
+    }
+    match /availability_forecasts/{facultyId} {
+      allow read: if signedIn();
+      allow write: if faculty() && request.auth.uid == facultyId;
     }
     match /rooms/{roomId} { allow read: if signedIn(); }
     // Old locator, prediction and notification collections are intentionally

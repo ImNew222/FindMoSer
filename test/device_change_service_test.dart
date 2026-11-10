@@ -1,6 +1,6 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:findmoser_app/services/device_change_service.dart';
+import 'package:findmoser_app/features/auth/services/device_change_service.dart';
 
 void main() {
   test(

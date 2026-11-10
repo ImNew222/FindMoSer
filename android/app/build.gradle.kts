@@ -39,7 +39,10 @@ android {
 
     packaging {
         jniLibs {
-            useLegacyPackaging = true
+            // Store .so files uncompressed and page-align them so the package
+            // manager can mmap them directly. Extraction at install time fails
+            // on some Infinix (Transsion) devices with a container error.
+            useLegacyPackaging = false
         }
     }
 }

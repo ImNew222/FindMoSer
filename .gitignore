@@ -59,3 +59,14 @@ firebase_options.dart
 # Service account credentials - never commit
 serviceAccountKey*.json
 service-account*.json
+
+# Local tooling / AI assistant caches
+.aider*
+
+# Android build artifacts
+android/build/
+android/.kotlin/
+*.salive
+
+# Accidental browser save
+<!DOCTYPE html>.txt

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:findmoser_app/screens/student/ai_chat_screen.dart';
-import 'package:findmoser_app/widgets/app_navigation.dart';
+import 'package:findmoser_app/features/assistant/screens/ai_chat_screen.dart';
+import 'package:findmoser_app/shared/widgets/app_navigation.dart';
 
 void main() {
   testWidgets('assistant opens without Firebase or a downloaded model', (

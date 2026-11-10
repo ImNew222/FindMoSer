@@ -3,12 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:findmoser_app/models/attendance_model.dart';
-import 'package:findmoser_app/models/schedule_model.dart';
-import 'package:findmoser_app/services/attendance_outbox.dart';
-import 'package:findmoser_app/services/attendance_service.dart';
-import 'package:findmoser_app/services/attendance_session_service.dart';
-import 'package:findmoser_app/services/campus_time.dart';
+import 'package:findmoser_app/features/attendance/models/attendance_model.dart';
+import 'package:findmoser_app/features/attendance/models/attendance_session_model.dart';
+import 'package:findmoser_app/features/attendance/models/schedule_model.dart';
+import 'package:findmoser_app/features/attendance/services/attendance_outbox.dart';
+import 'package:findmoser_app/features/attendance/services/attendance_service.dart';
+import 'package:findmoser_app/features/attendance/services/attendance_session_service.dart';
+import 'package:findmoser_app/core/campus_time.dart';
 
 const _uid = 'student-one';
 const _phone = '0123456789abcdef';
@@ -78,6 +79,19 @@ AttendanceRecord _receipt({SyncStatus status = SyncStatus.pending}) =>
       syncStatus: status,
     );
 
+AttendanceSession _sessionEnvelope() => AttendanceSession(
+      id: _session,
+      facultyId: 'faculty-one',
+      classId: 'class-one',
+      subject: 'Programming',
+      roomId: 'Room305',
+      date: '2026-10-08',
+      status: 'closed',
+      openedAt: DateTime.utc(2026, 10, 8),
+      closesAt: DateTime.utc(2026, 10, 8),
+      enrolledStudentIds: [_uid],
+    );
+
 class _ControlledFirestore extends Fake implements FirebaseFirestore {
   final FakeFirebaseFirestore data;
   Future<void> Function(
@@ -87,12 +101,11 @@ class _ControlledFirestore extends Fake implements FirebaseFirestore {
   )?
   write;
   int writes = 0;
+  bool offline = false;
   _ControlledFirestore(this.data);
   @override
   CollectionReference<Map<String, dynamic>> collection(String path) =>
-      path == 'attendance'
-      ? _Collection(this, data.collection(path))
-      : data.collection(path);
+      _Collection(this, data.collection(path));
 }
 
 // ignore: subtype_of_sealed_class
@@ -113,8 +126,15 @@ class _Document extends Fake
   final DocumentReference<Map<String, dynamic>> target;
   _Document(this.owner, this.target);
   @override
-  Future<DocumentSnapshot<Map<String, dynamic>>> get([GetOptions? options]) =>
-      target.get(options);
+  Future<DocumentSnapshot<Map<String, dynamic>>> get([
+    GetOptions? options,
+  ]) async {
+    if (owner.offline && options?.source == Source.server) {
+      throw FirebaseException(plugin: 'cloud_firestore', code: 'unavailable');
+    }
+    return target.get(options);
+  }
+
   @override
   Future<void> set(Map<String, dynamic> data, [SetOptions? options]) async {
     owner.writes++;
@@ -359,6 +379,34 @@ void main() {
     },
   );
 
+  test(
+    'offline preflight uses cached class data and keeps a pending receipt',
+    () async {
+      final data = FakeFirebaseFirestore();
+      await _seed(data);
+      final db = _ControlledFirestore(data)
+        ..offline = true
+        ..write = (_, __, ___) async {
+          throw FirebaseException(
+            plugin: 'cloud_firestore',
+            code: 'unavailable',
+          );
+        };
+      final outbox = AttendanceOutbox();
+      final service = AttendanceService(
+        db: db,
+        outbox: outbox,
+        currentUid: () => _uid,
+      );
+      await expectLater(
+        _record(service),
+        throwsA(isA<AttendancePendingException>()),
+      );
+      expect((await outbox.read(_uid)).single.syncStatus, SyncStatus.pending);
+      expect((await data.collection('attendance').get()).docs, isEmpty);
+    },
+  );
+
   test('in-flight deduplication does not bypass an account change', () async {
     final data = FakeFirebaseFirestore();
     await _seed(data);
@@ -390,39 +438,118 @@ void main() {
     expect(AttendanceService.csvCell(' =SUM(A1:A2)'), '"\' =SUM(A1:A2)"');
     expect(AttendanceService.csvCell('A, "B"\nC'), '"A, ""B""\nC"');
     expect(AttendanceService.csvCell(-64), '"-64"');
-    final csv = service.generateCsv([
-      _receipt(),
-      _receipt().copyWith(
-        syncStatus: SyncStatus.synced,
-        serverTimestamp: DateTime.utc(2026, 10, 8, 2),
-      ),
-    ]);
-    expect(csv.split('\r\n').where((row) => row.isNotEmpty), hasLength(2));
-    expect(csv, contains('2026-10-08T02:00:00.000Z'));
+    final csv = service.buildAttendanceCsv(
+      records: [
+        _receipt(),
+        _receipt(status: SyncStatus.synced).copyWith(
+          serverTimestamp: DateTime.utc(2026, 10, 8, 2),
+        ),
+      ],
+      sessions: [_sessionEnvelope()],
+      marks: const [],
+    );
+    final rows = csv.split('\r\n').where((row) => row.isNotEmpty).toList();
+    expect(rows, hasLength(2));
+    expect(rows[1], contains('2026-10-08T02:00:00.000Z'));
+    expect(rows[1], endsWith(',"scan receipt"'));
+    expect(rows[0], endsWith(',"Source"'));
   });
 
-  test('unreadable local receipts surface through the stream without an uncaught recovery error', () async {
-    final service = AttendanceService(
-      db: FakeFirebaseFirestore(),
-      outbox: _UnreadableOutbox(),
-      currentUid: () => _uid,
+  test('range export assembles receipts, marks and no-evidence rows', () async {
+    final db = FakeFirebaseFirestore();
+    final service = AttendanceService(db: db, currentUid: () => _uid);
+    await db.collection('attendance_sessions').doc('session-one').set({
+      'facultyId': 'faculty-one',
+      'classId': 'class-one',
+      'subject': 'Programming',
+      'roomId': 'Room305',
+      'date': '2026-10-07',
+      'openedAt': Timestamp.now(),
+      'closesAt': Timestamp.now(),
+      'status': 'closed',
+      'enrolledStudentIds': [_uid, 'student-two'],
+    });
+    await db.collection('attendance_sessions').doc('session-two').set({
+      'facultyId': 'faculty-one',
+      'classId': 'class-one',
+      'subject': 'Programming',
+      'roomId': 'Room305',
+      'date': '2026-10-14',
+      'openedAt': Timestamp.now(),
+      'closesAt': Timestamp.now(),
+      'status': 'closed',
+      'enrolledStudentIds': ['student-two'],
+    });
+    await db.collection('attendance').doc(_id).set(
+      _receipt(status: SyncStatus.synced)
+          .copyWith(serverTimestamp: DateTime.utc(2026, 10, 7, 2))
+          .toFirestore(),
     );
-    final streamErrors = <Object>[];
-    final uncaught = <Object>[];
-    await runZonedGuarded(() async {
-      final subscription = service.streamStudentAttendanceToday(_uid).listen(
-        (_) {},
-        onError: (Object error) => streamErrors.add(error),
-      );
-      // Drain initial snapshot/recovery microtasks before cancelling the stream.
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-      await subscription.cancel();
-    }, (error, _) => uncaught.add(error));
-    expect(streamErrors, isNotEmpty);
-    expect(streamErrors.every((error) => error is FormatException), true);
-    expect(uncaught, isEmpty);
+    await db.collection('attendance_marks').doc('session-one_student-two').set({
+      'facultyId': 'faculty-one',
+      'studentId': 'student-two',
+      'sessionId': _session,
+      'subject': 'Programming',
+      'attendanceStatus': 'absent',
+      'reason': 'slept in',
+      'markedAt': Timestamp.now(),
+      'studentName': 'Two Name',
+    });
+    final context = await service.getAttendanceContextForExport(
+      facultyId: 'faculty-one',
+      classId: 'class-one',
+      fromDate: '2026-10-01',
+      toDate: '2026-10-31',
+    );
+    expect(context.sessions, hasLength(2));
+    final csv = service.buildAttendanceCsv(
+      records: await service.getAttendanceForExport(
+        facultyId: 'faculty-one',
+        classId: 'class-one',
+        fromDate: '2026-10-01',
+        toDate: '2026-10-31',
+      ),
+      sessions: context.sessions,
+      marks: context.marks,
+    );
+    final rows = csv.split('\r\n').where((row) => row.isNotEmpty).toList();
+    // Header + 1 receipt + 1 mark + 1 no-evidence row.
+    expect(rows, hasLength(4));
+    expect(rows.where((r) => r.endsWith(',"scan receipt"')), hasLength(1));
+    expect(rows.where((r) => r.endsWith(',"faculty mark"')), hasLength(1));
+    expect(rows.where((r) => r.contains('absent (no receipt)')), hasLength(1));
+    final markRow = rows.singleWhere((r) => r.endsWith(',"faculty mark"'));
+    expect(markRow, contains('"student-two","Two Name"'));
+    expect(markRow, contains('"absent"'));
+    final lastRow = rows.last;
+    expect(lastRow, endsWith(',"no evidence"'));
+    expect(lastRow, contains('"2026-10-14","session-two","student-two"'));
   });
+
+  test(
+    'unreadable local receipts surface through the stream without an uncaught recovery error',
+    () async {
+      final service = AttendanceService(
+        db: FakeFirebaseFirestore(),
+        outbox: _UnreadableOutbox(),
+        currentUid: () => _uid,
+      );
+      final streamErrors = <Object>[];
+      final uncaught = <Object>[];
+      await runZonedGuarded(() async {
+        final subscription = service
+            .streamStudentAttendanceToday(_uid)
+            .listen((_) {}, onError: (Object error) => streamErrors.add(error));
+        // Drain initial snapshot/recovery microtasks before cancelling the stream.
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        await subscription.cancel();
+      }, (error, _) => uncaught.add(error));
+      expect(streamErrors, isNotEmpty);
+      expect(streamErrors.every((error) => error is FormatException), true);
+      expect(uncaught, isEmpty);
+    },
+  );
 
   group('faculty sessions and corrections', () {
     const schedule = ClassSchedule(

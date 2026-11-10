@@ -2,8 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:findmoser_app/services/auth_service.dart';
-import 'package:findmoser_app/services/device_id_service.dart';
+import 'package:findmoser_app/features/auth/services/auth_service.dart';
+import 'package:findmoser_app/features/auth/services/device_id_service.dart';
 
 class _User extends Fake implements User {
   @override
@@ -26,6 +26,8 @@ class _Auth extends Fake implements FirebaseAuth {
   User? currentUser;
   int registrations = 0;
   int signOuts = 0;
+  int resetRequests = 0;
+  FirebaseAuthException? resetError;
   _Auth([this.currentUser]);
 
   @override
@@ -48,6 +50,16 @@ class _Auth extends Fake implements FirebaseAuth {
   Future<void> signOut() async {
     signOuts++;
     currentUser = null;
+  }
+
+  @override
+  Future<void> sendPasswordResetEmail({
+    required String email,
+    ActionCodeSettings? actionCodeSettings,
+  }) async {
+    resetRequests++;
+    final error = resetError;
+    if (error != null) throw error;
   }
 }
 
@@ -173,19 +185,130 @@ void main() {
   );
 
   test(
-    'profile or server verification failure signs the account out',
+    'missing account profile signs the account out',
     () async {
-      for (final db in [FakeFirebaseFirestore(), _UnavailableFirestore()]) {
-        final auth = _Auth(_User('student-one'));
-        final service = AuthService(
-          auth: auth,
-          firestore: db,
-          readDeviceId: () async => phone,
-        );
-        await expectLater(service.verifyCurrentSession(), throwsA(anything));
-        expect(auth.currentUser, isNull);
-        expect(auth.signOuts, 1);
-      }
+      final auth = _Auth(_User('student-one'));
+      final service = AuthService(
+        auth: auth,
+        firestore: FakeFirebaseFirestore(),
+        readDeviceId: () async => phone,
+      );
+      await expectLater(
+        service.verifyCurrentSession(),
+        throwsA(isA<StateError>()),
+      );
+      expect(auth.currentUser, isNull);
+      expect(auth.signOuts, 1);
+    },
+  );
+
+  test(
+    'a deactivated student signs the account out',
+    () async {
+      final db = FakeFirebaseFirestore();
+      final auth = _Auth(_User('student-one'));
+      await db.collection('users').doc('student-one').set({
+        'role': 'student',
+        'deviceId': phone,
+        'deactivated': true,
+      });
+      await db.collection('device_bindings').doc(phone).set({
+        'uid': 'student-one',
+      });
+      final service = AuthService(
+        auth: auth,
+        firestore: db,
+        readDeviceId: () async => phone,
+      );
+      await expectLater(
+        service.verifyCurrentSession(),
+        throwsA(isA<StateError>()),
+      );
+      expect(auth.currentUser, isNull);
+      expect(auth.signOuts, 1);
+    },
+  );
+
+  test(
+    'password reset stays silent for unknown emails to block enumeration',
+    () async {
+      final auth = _Auth()
+        ..resetError = FirebaseAuthException(code: 'user-not-found');
+      final service = AuthService(
+        auth: auth,
+        firestore: FakeFirebaseFirestore(),
+        readDeviceId: () async => phone,
+      );
+      await service.sendPasswordReset(email: ' ghost@cec.test ');
+      expect(auth.resetRequests, 1);
+    },
+  );
+
+  test(
+    'password reset reports transport and service errors honestly',
+    () async {
+      final auth = _Auth()
+        ..resetError = FirebaseAuthException(code: 'network-request-failed');
+      final service = AuthService(
+        auth: auth,
+        firestore: FakeFirebaseFirestore(),
+        readDeviceId: () async => phone,
+      );
+      await expectLater(
+        service.sendPasswordReset(email: 'student@cec.test'),
+        throwsA('No internet connection. Connect to verify your account.'),
+      );
+      expect(auth.resetRequests, 1);
+    },
+  );
+
+  test(
+    'password reset completes for a real account',
+    () async {
+      final auth = _Auth();
+      final service = AuthService(
+        auth: auth,
+        firestore: FakeFirebaseFirestore(),
+        readDeviceId: () async => phone,
+      );
+      await service.sendPasswordReset(email: 'student@cec.test');
+      expect(auth.resetRequests, 1);
+    },
+  );
+
+  test(
+    'unreachable server keeps the signed-in session for retry',
+    () async {
+      final auth = _Auth(_User('student-one'));
+      final service = AuthService(
+        auth: auth,
+        firestore: _UnavailableFirestore(),
+        readDeviceId: () async => phone,
+      );
+      await expectLater(
+        service.verifyCurrentSession(),
+        throwsA(isA<SessionUnavailableException>()),
+      );
+      expect(auth.currentUser?.uid, 'student-one');
+      expect(auth.signOuts, 0);
+    },
+  );
+
+  test(
+    'server outage right after credentials are accepted keeps the session',
+    () async {
+      final auth = _Auth();
+      final service = AuthService(
+        auth: auth,
+        firestore: _UnavailableFirestore(),
+        readDeviceId: () async => phone,
+      );
+      final user = await service.signIn(
+        email: 'student@school.edu',
+        password: 'secret123',
+      );
+      expect(user?.uid, 'student-one');
+      expect(auth.signOuts, 0);
     },
   );
 }

@@ -6,5 +6,15 @@
     {"collectionGroup":"attendance","queryScope":"COLLECTION","fields":[{"fieldPath":"facultyId","order":"ASCENDING"},{"fieldPath":"date","order":"ASCENDING"}]},
     {"collectionGroup":"attendance","queryScope":"COLLECTION","fields":[{"fieldPath":"facultyId","order":"ASCENDING"},{"fieldPath":"sessionId","order":"ASCENDING"}]}
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "roster",
+      "fieldPath": "schoolId",
+      "indexes": [
+        {"queryScope": "COLLECTION", "order": "ASCENDING"},
+        {"queryScope": "COLLECTION", "order": "DESCENDING"},
+        {"queryScope": "COLLECTION_GROUP", "order": "ASCENDING"}
+      ]
+    }
+  ]
 }

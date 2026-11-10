@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:findmoser_app/models/user_model.dart';
-import 'package:findmoser_app/models/location_model.dart';
-import 'package:findmoser_app/models/schedule_model.dart';
-import 'package:findmoser_app/services/assistant/faculty_assistant.dart';
-import 'package:findmoser_app/services/location_policy.dart';
-import 'package:findmoser_app/services/beacon_stability.dart';
+import 'package:findmoser_app/core/user_model.dart';
+import 'package:findmoser_app/features/presence/models/location_model.dart';
+import 'package:findmoser_app/features/attendance/models/schedule_model.dart';
+import 'package:findmoser_app/features/assistant/services/faculty_assistant.dart';
+import 'package:findmoser_app/features/presence/services/location_policy.dart';
+import 'package:findmoser_app/features/attendance/services/beacon_stability.dart';
 
 class MemoryFacultyRepository implements FacultyRepository {
   List<AppUser> people = [

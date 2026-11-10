@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:findmoser_app/services/attendance_dwell_tracker.dart';
+import 'package:findmoser_app/features/attendance/services/attendance_dwell_tracker.dart';
 
 void main() {
   final start = DateTime.utc(2026, 10, 7, 1);

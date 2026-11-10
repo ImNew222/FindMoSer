@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:findmoser_app/models/attendance_model.dart';
-import 'package:findmoser_app/services/attendance_outbox.dart';
+import 'package:findmoser_app/features/attendance/models/attendance_model.dart';
+import 'package:findmoser_app/features/attendance/services/attendance_outbox.dart';
 
 AttendanceRecord _receipt(String id, {String uid = 'student-one'}) =>
     AttendanceRecord(

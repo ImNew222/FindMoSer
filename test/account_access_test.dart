@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:findmoser_app/services/account_access.dart';
+import 'package:findmoser_app/features/auth/services/account_access.dart';
 
 void main() {
   const uid = 'student-one';
@@ -28,6 +28,37 @@ void main() {
         localDeviceId: device,
       ),
       AccountAccess.deviceChangeRequired,
+    );
+  });
+
+  test('a deactivated student fails closed before any device check', () {
+    expect(
+      () => evaluateAccountAccess(
+        uid: uid,
+        profile: {'role': 'student', 'deviceId': device, 'deactivated': true},
+        localDeviceId: device,
+        bindingOwner: uid,
+      ),
+      throwsStateError,
+    );
+    expect(
+      () => evaluateAccountAccess(
+        uid: uid,
+        profile: {'role': 'student', 'deactivated': true},
+        localDeviceId: null,
+      ),
+      throwsStateError,
+    );
+    // A non-boolean flag is not an activation signal for deactivation, but a
+    // false value leaves the normal routing untouched.
+    expect(
+      evaluateAccountAccess(
+        uid: uid,
+        profile: {'role': 'student', 'deviceId': device, 'deactivated': false},
+        localDeviceId: device,
+        bindingOwner: uid,
+      ),
+      AccountAccess.student,
     );
   });
 

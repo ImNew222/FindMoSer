@@ -1,5 +1,6 @@
 package find.mo.serCompany
 
+import android.content.Intent
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -25,6 +26,19 @@ class MainActivity : FlutterActivity() {
                         }
                     } catch (_: Exception) {
                         result.error("UNAVAILABLE", "Unable to read Android ID", null)
+                    }
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "findmoser/system_settings")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "openLocationSettings") {
+                    result.notImplemented()
+                } else {
+                    try {
+                        startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                        result.success(true)
+                    } catch (_: Exception) {
+                        result.error("UNAVAILABLE", "Unable to open location settings", null)
                     }
                 }
             }

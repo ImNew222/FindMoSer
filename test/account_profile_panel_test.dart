@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:findmoser_app/config/app_theme.dart';
-import 'package:findmoser_app/models/user_model.dart';
-import 'package:findmoser_app/providers/auth_provider.dart';
-import 'package:findmoser_app/services/firestore_service.dart';
-import 'package:findmoser_app/widgets/account_profile_panel.dart';
+import 'package:findmoser_app/core/app_theme.dart';
+import 'package:findmoser_app/core/user_model.dart';
+import 'package:findmoser_app/shared/providers/auth_provider.dart';
+import 'package:findmoser_app/shared/services/firestore_service.dart';
+import 'package:findmoser_app/features/auth/widgets/account_profile_panel.dart';
 
 class RefusedProfileService extends FirestoreService {
   RefusedProfileService() : super(db: FakeFirebaseFirestore());

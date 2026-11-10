@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'firebase_options.dart';
-import 'config/app_theme.dart';
-import 'config/app_routes.dart';
-import 'config/app_constants.dart';
+import 'core/firebase_options.dart';
+import 'core/app_theme.dart';
+import 'core/app_routes.dart';
+import 'core/app_constants.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

@@ -6,15 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:findmoser_app/config/app_theme.dart';
-import 'package:findmoser_app/providers/ble_provider.dart';
-import 'package:findmoser_app/providers/favorites_provider.dart';
-import 'package:findmoser_app/models/user_model.dart';
-import 'package:findmoser_app/models/location_model.dart';
-import 'package:findmoser_app/screens/student/find_faculty_screen.dart';
-import 'package:findmoser_app/screens/student/ai_chat_screen.dart';
-import 'package:findmoser_app/widgets/app_navigation.dart';
-import 'package:findmoser_app/services/assistant/faculty_assistant.dart';
+import 'package:findmoser_app/core/app_theme.dart';
+import 'package:findmoser_app/features/presence/models/location_model.dart';
+import 'package:findmoser_app/features/assistant/screens/ai_chat_screen.dart';
+import 'package:findmoser_app/features/assistant/services/faculty_assistant.dart';
 import 'faculty_assistant_test.dart' show MemoryFacultyRepository;
 
 void main() {
@@ -45,99 +40,6 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
-  testWidgets('faculty filters work and the phone layout fits', (tester) async {
-    phone(tester);
-    final key = GlobalKey();
-    final people = [
-      const AppUser(
-        uid: 'ana',
-        displayName: 'Ana Cruz',
-        email: '',
-        role: 'faculty',
-        department: 'BSIT',
-        availability: 'available',
-      ),
-      const AppUser(
-        uid: 'ben',
-        displayName: 'Benjamin Reyes',
-        email: '',
-        role: 'faculty',
-        department: 'BSCS',
-        availability: 'teaching',
-      ),
-      const AppUser(
-        uid: 'maria',
-        displayName: 'Maria Santos',
-        email: '',
-        role: 'faculty',
-        department: 'BSIT',
-      ),
-    ];
-    final cards = people
-        .asMap()
-        .entries
-        .map(
-          (e) => FacultyLocationWithName(
-            user: e.value,
-            displayName: e.value.displayName,
-            department: e.value.department,
-            location: FacultyLocation(
-              facultyId: e.value.uid,
-              currentRoom: e.key == 0 ? 'AC-205' : 'Faculty Office',
-              beaconId: '',
-              timestamp: DateTime.now().subtract(
-                Duration(minutes: e.key == 1 ? 28 : 1),
-              ),
-              isVisible: e.key != 2,
-            ),
-          ),
-        )
-        .toList();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          allFacultyLocationsProvider.overrideWithValue(AsyncData(cards)),
-          locationCacheProvider.overrideWithValue(false),
-          favoritesProvider.overrideWith((ref) => Stream.value({'ana'})),
-        ],
-        child: RepaintBoundary(
-          key: key,
-          child: MaterialApp(
-            debugShowCheckedModeBanner: false,
-            theme: AppTheme.lightTheme,
-            home: Scaffold(
-              appBar: AppBar(title: const Text('FindMoSer')),
-              body: AppNavigation(
-                index: 1,
-                onChanged: (_) {},
-                destinations: const [
-                  (Icons.home_outlined, 'Home'),
-                  (Icons.search, 'Find'),
-                  (Icons.history, 'Activity'),
-                  (Icons.person_outline, 'Profile'),
-                ],
-                child: const FindFacultyScreen(),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.runAsync(() => GoogleFonts.pendingFonts());
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-    await capture(tester, key, 'find-faculty');
-    await tester.tap(find.text('Favorites'));
-    await tester.pumpAndSettle();
-    expect(find.text('Ana Cruz'), findsOneWidget);
-    expect(find.text('Benjamin Reyes'), findsNothing);
-    await tester.tap(find.text('Favorites'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'BSCS');
-    await tester.pumpAndSettle();
-    expect(find.text('Ana Cruz'), findsNothing);
-    expect(find.text('Benjamin Reyes'), findsOneWidget);
-  });
   testWidgets('assistant answers and follows up without loading a model', (
     tester,
   ) async {

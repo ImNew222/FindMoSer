@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:findmoser_app/services/availability_predictor.dart';
-import 'package:findmoser_app/models/schedule_model.dart';
+import 'package:findmoser_app/features/presence/services/availability_predictor.dart';
+import 'package:findmoser_app/features/attendance/models/schedule_model.dart';
 
 void main() {
   final now = DateTime.utc(2026, 9, 24, 1, 30);

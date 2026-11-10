@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:findmoser_app/services/device_id_service.dart';
+import 'package:findmoser_app/features/auth/services/device_id_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

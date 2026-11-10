@@ -3,10 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
-import 'package:findmoser_app/services/attendance_service.dart';
-import 'package:findmoser_app/screens/student/attendance_scan_screen.dart';
-import 'package:findmoser_app/providers/attendance_provider.dart';
-import 'package:findmoser_app/widgets/attendance_scan_widgets.dart';
+import 'package:findmoser_app/features/attendance/services/attendance_service.dart';
+import 'package:findmoser_app/features/attendance/screens/student/attendance_scan_screen.dart';
+import 'package:findmoser_app/features/attendance/providers/attendance_provider.dart';
+import 'package:findmoser_app/features/attendance/widgets/attendance_scan_widgets.dart';
 
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);

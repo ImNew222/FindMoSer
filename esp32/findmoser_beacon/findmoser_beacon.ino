@@ -1,4 +1,4 @@
-flk /*  *//*
+/*
  * ═══════════════════════════════════════════════════════════════
  *  FindMoSer BLE Beacon — ESP32-C3 + 0.96" OLED Display
  *  Cebu Eastern College — IoT-Powered Faculty Locator
@@ -285,9 +285,21 @@ void setup() {
   BLEDevice::setPower(ESP_PWR_LVL_P9);
 
   pAdvertising = BLEDevice::getAdvertising();
+
+  // The name is placed in both the advertisement and the scan response.
+  // Some Android phones only expose advName when the scan response contains it.
+  BLEAdvertisementData advertisementData;
+  advertisementData.setName(BEACON_NAME);
+  advertisementData.setFlags(0x06); // LE General Discoverable, BR/EDR not supported
+  pAdvertising->setAdvertisementData(advertisementData);
+
+  BLEAdvertisementData scanResponseData;
+  scanResponseData.setName(BEACON_NAME);
+  pAdvertising->setScanResponseData(scanResponseData);
+
   pAdvertising->setScanResponse(true);
   pAdvertising->setMinPreferred(0x06);
-  pAdvertising->setMinPreferred(0x12);
+  pAdvertising->setMaxPreferred(0x12);
 
   uint16_t advInterval = (uint16_t)(ADV_INTERVAL_MS / 0.625);
   pAdvertising->setMinInterval(advInterval);
